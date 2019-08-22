@@ -1,10 +1,6 @@
 #define IMessagingService_EXPORTS
 
 #include "MqttMessaging.h"
-#include "TaskQueue.h"
-#include "MQTTAsync.h"
-#include <atomic>
-#include <future>
 
 #ifdef TRC_CHANNEL
 #undef TRC_CHANNEL
@@ -22,6 +18,7 @@ namespace iqrf {
   typedef std::basic_string<uint8_t> ustring;
 
   class MqttMessagingImpl {
+#if 0
 
   private:
     //configuration
@@ -505,8 +502,152 @@ namespace iqrf {
       TRC_DEBUG(NAME_PAR(token, (response ? response->token : 0)));
       m_disconnect_promise.set_value(true);
     }
+  
+#endif
+  private:
+    shape::IMqttService* m_iMqttService = nullptr;
+
+    std::string m_name;
+    std::string m_mqttClientId;
+    std::string m_mqttTopicRequest;
+    std::string m_mqttTopicResponse;
+    bool m_acceptAsyncMsg = false;
+    IMessagingService::MessageHandlerFunc m_messageHandlerFunc;
+
+  public:
+    MqttMessagingImpl()
+    {}
+
+    //------------------------
+    ~MqttMessagingImpl()
+    {}
+
+    //------------------------
+    void start()
+    {
+      TRC_FUNCTION_ENTER("");
+      
+      m_iMqttService->create(m_mqttClientId);
+      m_iMqttService->registerMessageStrHandler([&](const std::string& topic, const std::string & msg)
+      {
+        if (m_messageHandlerFunc) {
+          m_messageHandlerFunc(m_name, std::vector<uint8_t>((uint8_t*)msg.data(), (uint8_t*)(msg.data() + msg.size())));
+        }
+      });
+
+      m_iMqttService->registerOnConnectHandler([&]()
+      {
+        m_iMqttService->subscribe(m_mqttTopicRequest);
+      });
+
+      m_iMqttService->connect();
+
+      TRC_FUNCTION_LEAVE("");
+    }
+
+    //------------------------
+    void stop()
+    {
+      TRC_FUNCTION_ENTER("");
+      
+      m_iMqttService->unregisterMessageStrHandler();
+      m_iMqttService->unregisterOnConnectHandler();
+      m_iMqttService->disconnect();
+
+      TRC_FUNCTION_LEAVE("");
+    }
+
+    //------------------------
+    const std::string& getName() const { return m_name; }
+
+    bool acceptAsyncMsg() const
+    {
+      return m_acceptAsyncMsg;
+    }
+
+    //------------------------
+    void registerMessageHandler(IMessagingService::MessageHandlerFunc hndl) {
+      TRC_FUNCTION_ENTER("");
+      m_messageHandlerFunc = hndl;
+      TRC_FUNCTION_LEAVE("");
+    }
+
+    //------------------------
+    void unregisterMessageHandler() {
+      TRC_FUNCTION_ENTER("");
+      m_messageHandlerFunc = IMessagingService::MessageHandlerFunc();
+      TRC_FUNCTION_LEAVE("");
+    }
+
+    //------------------------
+    void sendMessage(const ustring& msg) {
+      TRC_FUNCTION_ENTER("");
+      m_iMqttService->publish(m_mqttTopicResponse, std::vector<uint8_t>(msg.data(), msg.data() + msg.size()));
+      TRC_FUNCTION_LEAVE("");
+    }
+
+    void activate(const shape::Properties *props)
+    {
+      TRC_FUNCTION_ENTER("");
+      TRC_INFORMATION(std::endl <<
+        "******************************" << std::endl <<
+        "MqttMessaging instance activate" << std::endl <<
+        "******************************"
+      );
+
+      modify(props);
+
+      start();
+
+      TRC_FUNCTION_LEAVE("")
+    }
+
+    void deactivate()
+    {
+      TRC_FUNCTION_ENTER("");
+      TRC_INFORMATION(std::endl <<
+        "******************************" << std::endl <<
+        "MqttMessaging instance deactivate" << std::endl <<
+        "******************************"
+      );
+
+      stop();
+
+      TRC_FUNCTION_LEAVE("")
+    }
+
+    void modify(const shape::Properties *props)
+    {
+      TRC_FUNCTION_ENTER("");
+      props->getMemberAsString("ClientId", m_mqttClientId);
+      props->getMemberAsString("TopicRequest", m_mqttTopicRequest);
+      props->getMemberAsString("TopicResponse", m_mqttTopicResponse);
+      props->getMemberAsBool("acceptAsyncMsg", m_acceptAsyncMsg);
+      TRC_FUNCTION_LEAVE("");
+    }
+
+    void attachInterface(shape::IMqttService* iface)
+    {
+      TRC_FUNCTION_ENTER("");
+      m_iMqttService = iface;
+      TRC_FUNCTION_LEAVE("")
+    }
+
+    void detachInterface(shape::IMqttService* iface)
+    {
+      TRC_FUNCTION_ENTER("");
+      if (m_iMqttService == iface) {
+        m_iMqttService = nullptr;
+      }
+      TRC_FUNCTION_LEAVE("")
+    }
+
+    ////////////////
+
   };
 
+  //////////////////
+  // MqttMessaging implementation
   //////////////////
 
   MqttMessaging::MqttMessaging()
@@ -525,23 +666,17 @@ namespace iqrf {
 
   void MqttMessaging::registerMessageHandler(MessageHandlerFunc hndl)
   {
-    TRC_FUNCTION_ENTER("");
     m_impl->registerMessageHandler(hndl);
-    TRC_FUNCTION_LEAVE("")
   }
 
   void MqttMessaging::unregisterMessageHandler()
   {
-    TRC_FUNCTION_ENTER("");
     m_impl->unregisterMessageHandler();
-    TRC_FUNCTION_LEAVE("")
   }
 
   void MqttMessaging::sendMessage(const std::string& messagingId, const std::basic_string<uint8_t> & msg)
   {
-    TRC_FUNCTION_ENTER(PAR(messagingId));
     m_impl->sendMessage(msg);
-    TRC_FUNCTION_LEAVE("")
   }
 
   const std::string &  MqttMessaging::getName() const
@@ -556,37 +691,27 @@ namespace iqrf {
 
   void MqttMessaging::activate(const shape::Properties *props)
   {
-    TRC_FUNCTION_ENTER("");
-    TRC_INFORMATION(std::endl <<
-      "******************************" << std::endl <<
-      "MqttMessaging instance activate" << std::endl <<
-      "******************************"
-    );
-
-    modify(props);
-
-    m_impl->start();
-
-    TRC_FUNCTION_LEAVE("")
+    return m_impl->activate(props);
   }
 
   void MqttMessaging::deactivate()
   {
-    TRC_FUNCTION_ENTER("");
-    TRC_INFORMATION(std::endl <<
-      "******************************" << std::endl <<
-      "MqttMessaging instance deactivate" << std::endl <<
-      "******************************"
-    );
-
-    m_impl->stop();
-
-    TRC_FUNCTION_LEAVE("")
+    return m_impl->deactivate();
   }
 
   void MqttMessaging::modify(const shape::Properties *props)
   {
-    m_impl->update(props);
+    m_impl->modify(props);
+  }
+
+  void MqttMessaging::attachInterface(shape::IMqttService* iface)
+  {
+    m_impl->attachInterface(iface);
+  }
+
+  void MqttMessaging::detachInterface(shape::IMqttService* iface)
+  {
+    m_impl->detachInterface(iface);
   }
 
   void MqttMessaging::attachInterface(shape::ITraceService* iface)

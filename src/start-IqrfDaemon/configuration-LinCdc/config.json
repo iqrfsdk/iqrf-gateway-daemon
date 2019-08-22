@@ -43,6 +43,13 @@
       "startlevel": 0
     },
     {
+      "name": "shape::MqttService",
+      "libraryPath": "shapeware/bin",
+      "libraryName": "MqttService",
+      "enabled": true,
+      "startlevel": 0
+    },
+    {
       "name": "shape::CurlRestApiService",
       "libraryPath": "shapeware/bin",
       "libraryName": "CurlRestApiService",

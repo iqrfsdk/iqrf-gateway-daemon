@@ -27,40 +27,41 @@ namespace iqrf {
   {
   public:
     ////////////// status conversion
-    enum class MsgStatus {
-      st_ok,
-      st_noDb,
-      st_badParams
-    };
+    //enum class MsgStatus {
+    //  st_ok,
+    //  st_noDb,
+    //  st_badParams
+    //};
 
-    class MsgStatusConvertTable
-    {
-    public:
-      static const std::vector<std::pair<MsgStatus, std::string>>& table()
-      {
-        static std::vector <std::pair<MsgStatus, std::string>> table = {
-          { MsgStatus::st_ok, "ok" },
-          { MsgStatus::st_noDb, "no DB" },
-          { MsgStatus::st_badParams, "bad parameters" }
-        };
-        return table;
-      }
-      static MsgStatus defaultEnum()
-      {
-        return MsgStatus::st_badParams;
-      }
-      static const std::string& defaultStr()
-      {
-        static std::string u("unknown");
-        return u;
-      }
-    };
+    //class MsgStatusConvertTable
+    //{
+    //public:
+    //  static const std::vector<std::pair<MsgStatus, std::string>>& table()
+    //  {
+    //    static std::vector <std::pair<MsgStatus, std::string>> table = {
+    //      { MsgStatus::st_ok, "ok" },
+    //      { MsgStatus::st_noDb, "no DB" },
+    //      { MsgStatus::st_badParams, "bad parameters" }
+    //    };
+    //    return table;
+    //  }
+    //  static MsgStatus defaultEnum()
+    //  {
+    //    return MsgStatus::st_badParams;
+    //  }
+    //  static const std::string& defaultStr()
+    //  {
+    //    static std::string u("unknown");
+    //    return u;
+    //  }
+    //};
 
-    typedef shape::EnumStringConvertor<MsgStatus, MsgStatusConvertTable> MsgStatusConvertor;
+    //typedef shape::EnumStringConvertor<MsgStatus, MsgStatusConvertTable> MsgStatusConvertor;
 
     /////////// msg types as string
     const std::string mType_GetSensors = "infoDaemon_GetSensors";
     const std::string mType_GetBinaryOutputs = "infoDaemon_GetBinaryOutputs";
+    const std::string mType_StartEnumeration = "infoDaemon_StartEnumeration";
 
     /////////// message classes declarations
     class InfoDaemonMsg : public ApiMsg
@@ -76,40 +77,47 @@ namespace iqrf {
       {
       }
 
-      MsgStatus getErr()
-      {
-        return m_st;
-      }
+      //MsgStatus getErr()
+      //{
+      //  return m_st;
+      //}
 
-      void setErr(MsgStatus st)
-      {
-        m_st = st;
-        m_success = false;
-      }
+      //void setErr(MsgStatus st)
+      //{
+      //  m_st = st;
+      //  m_success = false;
+      //}
 
-      bool isSuccess()
-      {
-        return m_success;
-      }
+      //bool isSuccess()
+      //{
+      //  return m_success;
+      //}
 
       void createResponsePayload(rapidjson::Document& doc) override
       {
-        if (m_success) {
-          setStatus("ok", 0);
+        Value *notEmpty = Pointer("/data/rsp").Get(doc);
+        if (!(notEmpty)) {
+          // set empty rsp if not exists to satisfy validator
+          Value empty;
+          empty.SetObject();
+          Pointer("/data/rsp").Set(doc, empty);
         }
-        else {
-          if (getVerbose()) {
-            Pointer("/data/errorStr").Set(doc, MsgStatusConvertor::enum2str(m_st));
-          }
-          setStatus("err", -1);
-        }
+        //if (m_success) {
+        //  setStatus("ok", 0);
+        //}
+        //else {
+        //  //if (getVerbose()) {
+        //  //  Pointer("/data/errorStr").Set(doc, MsgStatusConvertor::enum2str(m_st));
+        //  //}
+        //  setStatus("err", -1);
+        //}
       }
 
       virtual void handleMsg(JsonIqrfInfoApi::Imp* imp) = 0;
 
     private:
-      MsgStatus m_st = MsgStatus::st_ok;
-      bool m_success = true;
+      //MsgStatus m_st = MsgStatus::st_ok;
+      //bool m_success = true;
     };
 
     //////////////////////////////////////////////
@@ -231,6 +239,36 @@ namespace iqrf {
       std::map<int, binaryoutput::EnumeratePtr> m_enmMap;
     };
 
+    //////////////////////////////////////////////
+    class InfoDaemonMsgStartEnumeration : public InfoDaemonMsg
+    {
+    public:
+      InfoDaemonMsgStartEnumeration() = delete;
+      InfoDaemonMsgStartEnumeration(const rapidjson::Document& doc)
+        :InfoDaemonMsg(doc)
+      {
+      }
+
+      virtual ~InfoDaemonMsgStartEnumeration()
+      {
+      }
+
+      void createResponsePayload(rapidjson::Document& doc) override
+      {
+        InfoDaemonMsg::createResponsePayload(doc);
+      }
+
+      void handleMsg(JsonIqrfInfoApi::Imp* imp) override
+      {
+        TRC_FUNCTION_ENTER("");
+        imp->startEnumeration();
+        TRC_FUNCTION_LEAVE("");
+      }
+
+    private:
+      std::map<int, binaryoutput::EnumeratePtr> m_enmMap;
+    };
+
   ///////////////////// Imp members
   private:
 
@@ -249,6 +287,7 @@ namespace iqrf {
     {
       m_objectFactory.registerClass<InfoDaemonMsgGetSensors>(mType_GetSensors);
       m_objectFactory.registerClass<InfoDaemonMsgGetBinaryOutputs>(mType_GetBinaryOutputs);
+      m_objectFactory.registerClass<InfoDaemonMsgStartEnumeration>(mType_StartEnumeration);
     }
 
     ~Imp()
@@ -271,15 +310,21 @@ namespace iqrf {
       TRC_FUNCTION_ENTER(PAR(messagingId) << NAME_PAR(mType, msgType.m_type) <<
         NAME_PAR(major, msgType.m_major) << NAME_PAR(minor, msgType.m_minor) << NAME_PAR(micro, msgType.m_micro));
 
-      Document respDoc;
       std::unique_ptr<InfoDaemonMsg> msg = m_objectFactory.createObject(msgType.m_type, reqDoc);
 
-      msg->handleMsg(this);
-      msg->createResponse(respDoc);
-
-      std::string t = JsonToStr(&respDoc);
-
-      m_iMessagingSplitterService->sendMessage(messagingId, std::move(respDoc));
+      try {
+        Document respDoc;
+        msg->handleMsg(this);
+        msg->setStatus("ok", 0);
+        msg->createResponse(respDoc);
+        m_iMessagingSplitterService->sendMessage(messagingId, std::move(respDoc));
+      }
+      catch (std::exception & e) {
+        msg->setStatus(e.what(), -1);
+        Document respErrDoc;
+        msg->createResponse(respErrDoc);
+        m_iMessagingSplitterService->sendMessage(messagingId, std::move(respErrDoc));
+      }
 
       TRC_FUNCTION_LEAVE("");
     }
@@ -292,6 +337,11 @@ namespace iqrf {
     std::map<int, binaryoutput::EnumeratePtr> getBinaryOutputs() const
     {
       return m_iIqrfInfo->getBinaryOutputs();
+    }
+
+    void startEnumeration()
+    {
+      m_iIqrfInfo->startEnumeration();
     }
 
     void activate(const shape::Properties *props)

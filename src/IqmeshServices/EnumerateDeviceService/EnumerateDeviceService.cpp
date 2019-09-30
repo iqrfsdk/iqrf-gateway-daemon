@@ -21,54 +21,6 @@ using namespace rapidjson;
 
 namespace {
 
-  // helper functions
-  std::string encodeHexaNum_CapitalLetters(uint16_t from)
-  {
-    std::ostringstream os;
-    os.fill('0'); os.width(4);
-    os << std::hex << std::uppercase << (int)from;
-    return os.str();
-  }
-
-  // holds parsed data from OS read response
-  class OsReadObject {
-  public:
-    class TrMcuType {
-    public:
-      uint8_t value;
-      std::string trType;
-      bool fccCertified;
-      std::string mcuType;
-    };
-
-    class Flags {
-    public:
-      uint8_t value;
-      bool insufficientOsBuild;
-      std::string interface;
-      bool dpaHandlerDetected;
-      bool dpaHandlerNotDetectedButEnabled;
-      bool noInterfaceSupported;
-    };
-
-    class SlotLimits {
-    public:
-      uint8_t value;
-      std::string shortestTimeslot;
-      std::string longestTimeslot;
-    };
-
-    std::string mid;
-    std::string osVersion;
-    TrMcuType trMcuType;
-    std::string osBuild;
-    std::string rssi;
-    std::string supplyVoltage;
-    Flags flags;
-    SlotLimits slotLimits;
-
-  };
-
   // maximum number of repeats
   static const uint8_t REPEAT_MAX = 3;
 
@@ -89,7 +41,6 @@ namespace {
 
   // number of peripherals in DPA response: get info for more peripherals
   static const uint8_t PERIPHERALS_NUM = 14;
-
 
   // baud rates
   static uint8_t BAUD_RATES_SIZE = 9;
@@ -148,6 +99,7 @@ namespace iqrf {
 
   // holds information about result of device enumeration
   class DeviceEnumerateResult {
+
   private:
     // results of partial DPA requests
     DeviceEnumerateError m_bondedError;
@@ -205,7 +157,6 @@ namespace iqrf {
     void setMorePersInfoError(const DeviceEnumerateError& error) {
       m_morePersInfoError = error;
     }
-
 
     uint16_t getDeviceAddr() const {
       return m_deviceAddr;
@@ -824,6 +775,12 @@ namespace iqrf {
         Pointer( "/data/rsp/trConfiguration/nodeDpaInterface" ).Set( response, nodeDpaInterface );
       }
 
+      // for DPA v4.10 upwards
+      if ( dpaVer >= 0x0410 ) {
+        bool dpaPeerToPeer = ( ( byte05 & 0b00000010 ) == 0b00000010 ) ? true : false;
+        Pointer( "/data/rsp/trConfiguration/dpaPeerToPeer" ).Set( response, dpaPeerToPeer );
+      }
+
       bool dpaAutoexec = ( ( byte05 & 0b100 ) == 0b100 ) ? true : false;
       Pointer( "/data/rsp/trConfiguration/dpaAutoexec" ).Set( response, dpaAutoexec );
 
@@ -1045,12 +1002,15 @@ namespace iqrf {
         // Peripheral enumeration
         peripheralEnumeration( deviceEnumerateResult );
 
-        const IJsCacheService::Package* package = m_iJsCacheService->getPackage(
-          deviceEnumerateResult.getEnumeratedNodeHwpId(),
-          deviceEnumerateResult.getEnumeratedNodeHwpIdVer(),
-          deviceEnumerateResult.getOsRead()->getOsBuildAsString(),
-          deviceEnumerateResult.getPerEnum()->getDpaVerAsHexaString()
-        );
+        const IJsCacheService::Package* package = nullptr;
+        if (deviceEnumerateResult.getPerEnum() && deviceEnumerateResult.getOsRead()) {
+          package = m_iJsCacheService->getPackage(
+            deviceEnumerateResult.getEnumeratedNodeHwpId(),
+            deviceEnumerateResult.getEnumeratedNodeHwpIdVer(),
+            deviceEnumerateResult.getOsRead()->getOsBuildAsString(),
+            deviceEnumerateResult.getPerEnum()->getDpaVerAsHexaString()
+          );
+        }
         if ( package != nullptr )
         {
           std::list<std::string> standards;

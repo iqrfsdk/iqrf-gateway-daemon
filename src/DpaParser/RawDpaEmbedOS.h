@@ -26,6 +26,7 @@ namespace iqrf
 
         void parseResponse(const DpaMessage & dpaResponse) override
         {
+          
           TPerOSRead_Response resp = dpaResponse.DpaPacket().DpaResponsePacket_t.DpaMessage.PerOSRead_Response;
 
           m_mid = (unsigned)resp.MID[0] + ((unsigned)resp.MID[1] << 8) + ((unsigned)resp.MID[2] << 16) + ((unsigned)resp.MID[3] << 24);
@@ -36,7 +37,24 @@ namespace iqrf
           m_supplyVoltage = 261.12 / (127 - (int)resp.SupplyVoltage);
           m_flags = (int)resp.Flags;
           m_slotLimits = (int)resp.SlotLimits;
-          m_ibk = std::vector<uint8_t>(resp.IBK, resp.IBK + 16);
+          
+          // False at DPA < 3.03
+          if (m_rdata.size() > 12 + 16) {
+            m_ibk = std::vector<uint8_t>(resp.IBK, resp.IBK + 16);
+            m_is303Compliant = true;
+          }
+
+          // Only in DSM the next condition would be false or at DPA < 4.10
+          if (m_rdata.size() > 28 + 11 ) {
+            m_dpaVer = (int)resp.DpaVersion;
+            m_perNr = (int)resp.UserPerNr;
+            m_embedPer = bitmapToIndexes(resp.EmbeddedPers, 0, 3, 0);
+            m_hwpidValEnum = (int)resp.HWPID;
+            m_hwpidVer = (int)resp.HWPIDver;
+            m_flags = (int)resp.Flags;
+            m_userPer = bitmapToIndexes(resp.UserPer, 0, 11, 0x20);
+            m_is410Compliant = true;
+          }
         }
       };
       typedef std::unique_ptr<RawDpaRead> RawDpaReadPtr;

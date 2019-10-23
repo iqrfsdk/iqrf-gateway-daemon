@@ -619,6 +619,7 @@ namespace iqrf {
     void modify(const shape::Properties *props)
     {
       TRC_FUNCTION_ENTER("");
+      props->getMemberAsString("instance", m_name);
       props->getMemberAsString("ClientId", m_mqttClientId);
       props->getMemberAsString("TopicRequest", m_mqttTopicRequest);
       props->getMemberAsString("TopicResponse", m_mqttTopicResponse);

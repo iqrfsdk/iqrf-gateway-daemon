@@ -1,0 +1,97 @@
+{
+	"$schema": "https://apidocs.iqrf.org/iqrf-gateway-daemon/com.iqrftech.self-desc/schema/jsonschema/1-0-0#",
+	"self": {
+		"vendor": "com.iqrftech.self-desc",
+		"name": "schema__iqrf__IqrfMqtt",
+		"format": "jsonschema",
+		"version": "1-0-0"
+	},
+	"title": "IqrfMqtt component instance schema",
+	"type": "object",
+	"required": [
+		"component",
+		"instance"
+	],
+	"additionalProperties": false,
+	"properties": {
+		"component": {
+			"$id": "#/properties/component",
+			"title": "Component name",
+			"type": "string",
+			"enum": [
+				"iqrf::IqrfMqtt"
+			]
+		},
+		"instance": {
+			"$id": "#/properties/instance",
+			"title": "Instance name",
+			"description": "Component instance name, recommended iqrf::IqrfMqtt-(id)",
+			"type": "string",
+			"example": "iqrf::IqrfMqtt-1",
+			"default": "iqrf::IqrfMqtt"
+		},
+		"broker": {
+			"$id": "#/properties/broker",
+			"title": "MQTT broker address",
+			"type": "string",
+			"example": "localhost",
+			"default": "localhost"
+		},
+		"port": {
+			"$id": "#/properties/port",
+			"title": "MQTT broker address",
+			"type": "integer",
+			"enum": [
+				1883,
+				8883
+			],
+			"example": 1883,
+			"default": 1883
+		},
+		"clientId": {
+			"$id": "#/properties/clientId",
+			"title": "MQTT client ID",
+			"type": "string",
+			"example": "iqrfgd2-ffffffffffffffff"
+		},
+		"requestTopic": {
+			"$id": "#/properties/requestTopic",
+			"title": "Subscribe topic",
+			"description": "Topic used to receive requests from MQTT broker",
+			"type": "string",
+			"example": "reqTopic"
+		},
+		"responseTopic": {
+			"$id": "#/properties/responseTopic",
+			"title": "Publish topic",
+			"description": "Topic used to send responses to MQTT broker",
+			"type": "string",
+			"example": "respTopic"
+		},
+		"persistence": {
+			"$id": "#/properties/persistence",
+			"title": "Persistence type",
+			"type": "integer",
+			"enum": [
+				-2,
+				0,
+				1,
+				2
+			],
+			"example": 1,
+			"default": 1
+		},
+		"qos": {
+			"$id": "#/properties/qos",
+			"title": "Quality of service",
+			"type": "integer",
+			"enum": [
+				0,
+				1,
+				2
+			],
+			"example": 1,
+			"default": 1
+		}
+	}
+}

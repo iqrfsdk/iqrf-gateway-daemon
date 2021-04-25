@@ -40,7 +40,7 @@ endif()
 DeployShapeComponent(${PROJECT_NAME})
 
 if(UNIX)
-	list(APPEND CfgList "LinCdc" "LinSpi" "LinUart" "LinDeploy")
+	list(APPEND CfgList "LinCdc" "LinMqtt" "LinSpi" "LinUart" "LinDeploy")
 else()
 	list(APPEND CfgList "WinCdc" "WinUartWin")
 endif()

@@ -1,0 +1,8 @@
+{
+	"component": "iqrf::IqrfMqtt",
+	"instance": "iqrf::IqrfMqtt",
+	"broker": "tcp://localhost:1883",
+	"clientId": "iqrfgd2-ffffffffffffffff",
+	"requestTopic": "reqTopic",
+	"responseTopic": "respTopic"
+}

@@ -273,8 +273,8 @@ namespace iqrf {
 			}
 
 			int onMessage(char* topicName, int topicLen, MQTTAsync_message* message) {
-				std::string payload((char* )message->payload);
-				TRC_INFORMATION("Received message on topic " << std::string(topicName) << ": " << payload);
+				std::basic_string<uint8_t> payload((uint8_t *)message->payload, message->payloadlen);
+				m_accessControl.messageHandler(payload);
 				MQTTAsync_freeMessage(&message);
 				MQTTAsync_free(topicName);
 				return 1;
@@ -290,7 +290,8 @@ namespace iqrf {
 				if (cause) {
 					errorMsg = std::string(cause);
 				}
-				TRC_WARNING("Connection list: " <<  errorMsg);
+				TRC_WARNING("Connection lost: " <<  errorMsg);
+				startListen();
 			}
 
 			////////////////////
@@ -306,7 +307,7 @@ namespace iqrf {
 					m_runThread.join();
 				}
 				m_runThread = std::thread([this] {this->runThread();});
-				pthread_setname_np(m_runThread.native_handle(), "iqrfMqtt_conTh");
+				pthread_setname_np(m_runThread.native_handle(), "iqrfMqttConnect");
 			}
 
 			void runThread() {

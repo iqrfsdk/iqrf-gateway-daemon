@@ -41,8 +41,9 @@ namespace iqrf {
 			/// connect mutex
 			std::mutex m_connectMutex;
 			std::condition_variable m_cv;
-			///
+			/// indicates that client is connected to broker
 			std::atomic_bool m_connected;
+			/// should client reconnect on failure?
 			std::atomic_bool m_reconnect;
 
 			///// mqtt configuration /////
@@ -330,7 +331,20 @@ namespace iqrf {
 
 			///// IIqrfChannel methods /////
 			void send(const std::basic_string<unsigned char>& message) {
-				//
+				if (m_connected) {
+					int ret;
+					MQTTAsync_message msg = MQTTAsync_message_initializer;
+
+					msg.payload = (void *)message.data();
+					msg.payloadlen = (int)message.size();
+					msg.qos = m_qos;
+					msg.retained = 0;
+
+					ret = MQTTAsync_sendMessage(m_client, m_publishTopic.c_str(), &msg, &m_publishOptions);
+					if (ret != MQTTASYNC_SUCCESS) {
+						TRC_WARNING("MQTTAsync_sendMessage() failed: " << ret);
+					}
+				}
 			}
 
 			IIqrfChannelService::State getState() const {

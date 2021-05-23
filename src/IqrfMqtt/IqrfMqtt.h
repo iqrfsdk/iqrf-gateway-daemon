@@ -30,6 +30,7 @@
 #include "MQTTAsync.h"
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -136,6 +137,80 @@ namespace iqrf {
 		 * @return Execution code
 		 */
 		UploadErrorCode upload(const IIqrfChannelService::UploadTarget target, const std::basic_string<uint8_t>& data, const uint16_t address);
+
+		/**
+		 * MQTT client connect success callback
+		 * @param response MQTTAsync success response
+		 */
+		void onConnect(MQTTAsync_successData *response);
+
+		/**
+		 * MQTT client connect failure callback
+		 * @param response MQTTAsync failure response
+		 */
+		void onConnectFail(MQTTAsync_failureData *response);
+
+		/**
+		 * MQTT client disconnect success callback
+		 * @param response MQTTAsync success response
+		 */
+		void onDisconnect(MQTTAsync_successData	*response);
+
+		/**
+		 * MQTT client disconnect failure callback
+		 * @param response MQTTAsync failure response
+		 */
+		void onDisconnectFail(MQTTAsync_failureData *response);
+
+		/**
+		 * MQTT client subscribe success callback
+		 * @param response MQTTAsync success response
+		 */
+		void onSubscribe(MQTTAsync_successData *response);
+
+		/**
+		 * MQTT client subscribe failure callback
+		 * @param response MQTTAsync failure response
+		 */
+		void onSubscribeFail(MQTTAsync_failureData *response);
+
+		/**
+		 * MQTT client publish success callback
+		 * @param context Context
+		 * @param response MQTTAsync success response
+		 */
+		void onPublish(MQTTAsync_successData *response);
+
+		/**
+		 * MQTT client publish failure callback
+		 * @param context Context
+		 * @param response MQTTAsync failure response
+		 */
+		void onPublishFail(MQTTAsync_failureData *response);
+
+		/**
+		 * MQTT client message delivered callback
+		 * @param context Context
+		 * @param dt Delivery token
+		 */
+		void onDelivered(MQTTAsync_token dt);
+
+		/**
+		 * MQTT client message received callback
+		 * @param context Context
+		 * @param topicName Publish topic
+		 * @param topicLen Topic string length
+		 * @param message Published message
+		 * @returns Execution code
+		 */
+		int onMessage(char* topicName, int topicLen, MQTTAsync_message* message);
+
+		/**
+		 * MQTT client connection lost callback
+		 * @param context Context
+		 * @param cause Cause of connection loss
+		 */
+		void onConnectionLost(char *cause);
 	private:
 		/**
 		 * Initializes asynchronous mqtt client
@@ -151,72 +226,6 @@ namespace iqrf {
 		 * Runs listening thread
 		 */
 		void runListeningThread();
-
-		/**
-		 * MQTT client connect success callback
-		 * @param context Context
-		 * @param response MQTTAsync success response
-		 */
-		void onConnect(void *context, MQTTAsync_successData *response);
-
-		/**
-		 * MQTT client connect failure callback
-		 * @param context Context
-		 * @param response MQTTAsync failure response
-		 */
-		void onConnectFail(void *context, MQTTAsync_failureData *response);
-
-		/**
-		 * MQTT client subscribe success callback
-		 * @param context Context
-		 * @param response MQTTAsync success response
-		 */
-		void onSubscribe(void *context, MQTTAsync_successData *response);
-
-		/**
-		 * MQTT client subscribe failure callback
-		 * @param context Context
-		 * @param response MQTTAsync failure response
-		 */
-		void onSubscribeFail(void *context, MQTTAsync_failureData *response);
-
-		/**
-		 * MQTT client publish success callback
-		 * @param context Context
-		 * @param response MQTTAsync success response
-		 */
-		void onPublish(void *context, MQTTAsync_successData *response);
-
-		/**
-		 * MQTT client publish failure callback
-		 * @param context Context
-		 * @param response MQTTAsync failure response
-		 */
-		void onPublishFail(void *context, MQTTAsync_failureData *response);
-
-		/**
-		 * MQTT client message delivered callback
-		 * @param context Context
-		 * @param dt Delivery token
-		 */
-		void onDelivered(void *context, MQTTAsync_token dt);
-
-		/**
-		 * MQTT client message received callback
-		 * @param context Context
-		 * @param topicName Publish topic
-		 * @param topicLen Topic string length
-		 * @param message Published message
-		 * @returns Execution code
-		 */
-		int onMessage(void* context, char* topicName, int topicLen, MQTTAsync_message* message);
-
-		/**
-		 * MQTT client connection lost callback
-		 * @param context Context
-		 * @param cause Cause of connection loss
-		 */
-		void onConnectionLost(void *context, char *cause);
 
 		/// access control
 		AccessControl<IqrfMqtt> m_accessControl;
@@ -246,11 +255,19 @@ namespace iqrf {
 		int m_qos;
 
 		///// paho configuration /////
-		/// mqtt client object ///
+		/// mqtt client object
 		MQTTAsync m_client = nullptr;
-		/// connect options ///
+		/// connect options
 		MQTTAsync_connectOptions m_connectOptions = MQTTAsync_connectOptions_initializer;
+		/// disconnect options
+		MQTTAsync_disconnectOptions m_disconnectOptions = MQTTAsync_disconnectOptions_initializer;
+		/// subscribe options
 		MQTTAsync_responseOptions m_subscribeOptions = MQTTAsync_responseOptions_initializer;
+		/// publish options
 		MQTTAsync_responseOptions m_publishOptions = MQTTAsync_responseOptions_initializer;
+		/// disconnect promise
+		std::promise<bool> m_disconnect_promise;
+    	/// disconnect future
+		std::future<bool> m_disconnect_future = m_disconnect_promise.get_future();
 	};
 }

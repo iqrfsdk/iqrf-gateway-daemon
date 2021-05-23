@@ -115,7 +115,7 @@ namespace iqrf {
 
 	///// dummy methods /////
 
-	IIqrfChannelService::osInfo getTrModuleInfo() {
+	IIqrfChannelService::osInfo IqrfMqtt::getTrModuleInfo() {
 		IIqrfChannelService::osInfo myOsInfo;
 		memset(&myOsInfo, 0, sizeof(myOsInfo));
 		return myOsInfo;
@@ -137,71 +137,13 @@ namespace iqrf {
 		(void)address;
 		return IIqrfChannelService::UploadErrorCode::UPLOAD_ERROR_NOT_SUPPORTED;
 	}
-
-	///// MQTT client methods /////
-
-	void IqrfMqtt::initMqtt() {
-		TRC_INFORMATION("Initializing MQTT client configuration");
-		int ret;
-
-		ret = MQTTAsync_create(&m_client, m_broker.c_str(), m_clientId.c_str(), MQTTCLIENT_PERSISTENCE_NONE, NULL);
-		if (ret != MQTTASYNC_SUCCESS) {
-			THROW_EXC_TRC_WAR(std::logic_error, "Failed to create MQTT client: " << PAR(ret));
-		}
-
-		m_connectOptions.keepAliveInterval = 25;
-		m_connectOptions.cleansession = 1;
-		m_connectOptions.connectTimeout = 5;
-		m_connectOptions.automaticReconnect = 1;
-		m_connectOptions.onSuccess = onConnect;
-		m_connectOptions.onFailure = onConnectFail;
-		m_connectOptions.context = this;
-
-		m_subscribeOptions.onSuccess = onSubscribe;
-		m_subscribeOptions.onFailure = onSubscribeFail;
-		m_subscribeOptions.context = this;
-
-		m_publishOptions.onSuccess = onPublish;
-		m_publishOptions.onFailure = onPublishFail;
-		m_publishOptions.context = this;
-
-		ret = MQTTAsync_setCallbacks(m_client, this, onConnectionLost, onMessage, onDelivered);
-		if (ret != MQTTASYNC_SUCCESS) {
-			THROW_EXC_TRC_WAR(std::logic_error, "Failed to set client callbacks: " << PAR(ret));
-		}
-	}
-
-	void IqrfMqtt::teardownMqtt() {
-		TRC_INFORMATION("Tearing down MQTT client");
-
-		if (m_runThread.joinable()) {
-			m_runThread.join();
-		}
-
-		int ret;
-	}
-
-	void IqrfMqtt::runListeningThread() {
-		int ret;
-		while (true) {
-			ret = MQTTAsync_connect(m_client, &m_connectOptions);
-			if (ret != MQTTASYNC_SUCCESS) {
-				TRC_WARNING("Connect method failed: " << PAR(ret));
-			}
-			TRC_DEBUG("Sleeping...");
-			{
-				std::unique_lock<std::mutex> lck(m_connectMutex);
-				if (m_cv.wait_for(lck, std::chrono::seconds(5), 
-				[this] {return m_connected == true || m_reconnect == false;})) {
-					break;
-				}
-			}
-		}
-	}
 		
 	///// callbacks /////
+	static void connectCallback(void* context, MQTTAsync_successData* response) {
+		((IqrfMqtt *)context)->onConnect(response);
+	}
 
-	void IqrfMqtt::onConnect(void *context, MQTTAsync_successData *response) {
+	void IqrfMqtt::onConnect(MQTTAsync_successData *response) {
 		MQTTAsync_token token = 0;
 		std::string serverUri = "";
 		int version = 0;
@@ -231,27 +173,64 @@ namespace iqrf {
 		}
 	}
 
-	void IqrfMqtt::onConnectFail(void *context, MQTTAsync_failureData *response) {
+	static void connectFailCallback(void *context, MQTTAsync_failureData *response) {
+		((IqrfMqtt *)context)->onConnectFail(response);
+	}
+
+	void IqrfMqtt::onConnectFail(MQTTAsync_failureData *response) {
+		int code = -1;
+		std::string message("No message");
+
 		if (response) {
-			TRC_WARNING("Failed to connect to MQTT broker: " <<
-				m_broker << " with code " << response->code <<
-				": " << response->message
-			);
-		} else {
-			TRC_WARNING("Failed to connect to MQTT broker: " <<
-				m_broker << ", no response received"
-			);
+			code = response->code;
+			message = response->message;
 		}
+		TRC_WARNING("Failed to connect to MQTT broker " << m_broker <<
+			":[" << code << "] " << MQTTAsync_strerror(code) << ": " << message
+		);
 
 		{
 			std::unique_lock<std::mutex> lck(m_connectMutex);
 			m_connected = false;
 			m_cv.notify_one();
-		}
-		
+		}	
 	}
 
-	void IqrfMqtt::onSubscribe(void *context, MQTTAsync_successData *response) {
+	static void disconnectCallback(void *context, MQTTAsync_successData *response) {
+		((IqrfMqtt *)context)->onDisconnect(response);
+	}
+
+	void IqrfMqtt::onDisconnect(MQTTAsync_successData *response) {
+		MQTTAsync_token token = 0;
+		if (response->token) {
+			token = response->token;
+		}
+		TRC_INFORMATION("Successfully disconnected with token " << token);
+		m_disconnect_promise.set_value(true);
+	}
+
+	static void disconnectFailCallback(void *context, MQTTAsync_failureData *response) {
+		((IqrfMqtt *)context)->onDisconnectFail(response);
+	}
+
+	void IqrfMqtt::onDisconnectFail(MQTTAsync_failureData *response) {
+		int code = -1;
+		std::string message("No message");
+
+		if (response) {
+			code = response->code;
+			message = response->message;
+		}
+		TRC_WARNING("Failed to disconnect: [" << code << "] " <<
+			MQTTAsync_strerror(code) << ": " << message
+		);
+	}
+
+	static void subscribeCallback(void *context, MQTTAsync_successData *response) {
+		((IqrfMqtt *)context)->onSubscribe(response);
+	}
+
+	void IqrfMqtt::onSubscribe(MQTTAsync_successData *response) {
 		MQTTAsync_token token = 0;
 		int qos = 0;
 
@@ -266,9 +245,13 @@ namespace iqrf {
 		);
 	}
 
-	void IqrfMqtt::onSubscribeFail(void *context, MQTTAsync_failureData *response) {
+	static void subscribeFailCallback(void *context, MQTTAsync_failureData *response) {
+		((IqrfMqtt *)context)->onSubscribeFail(response);
+	}
+
+	void IqrfMqtt::onSubscribeFail(MQTTAsync_failureData *response) {
 		MQTTAsync_token token = 0;
-		int code = 0;
+		int code = -1;
 		std::string message("No message");
 		
 		if (response) {
@@ -277,13 +260,17 @@ namespace iqrf {
 			message = response->message;
 		}
 
-		TRC_WARNING("Failed to subscribe to topic: " <<
-			m_subscribeTopic << " with qos " << m_qos <<
-			", token: " << token << ", with code " << code << ": " << message
+		TRC_WARNING("Failed to subscribe to topic " << m_subscribeTopic <<
+			", qos " << m_qos << ", token " << token <<
+			": [" << code << "] " << MQTTAsync_strerror(code) << ": " << message
 		);
 	}
 
-	void IqrfMqtt::onPublish(void *context, MQTTAsync_successData *response) {
+	static void publishCallback(void *context, MQTTAsync_successData *response) {
+		((IqrfMqtt *)context)->onPublish(response);
+	}
+
+	void IqrfMqtt::onPublish(MQTTAsync_successData *response) {
 		MQTTAsync_token token = 0;
 		if (response) {
 			token = response->token;
@@ -291,15 +278,36 @@ namespace iqrf {
 		TRC_INFORMATION("Message successfully published with token: " << token);
 	}
 
-	void IqrfMqtt::onPublishFail(void *context, MQTTAsync_failureData *response) {
-		TRC_WARNING("Failed to publish message, with code: " << response->code);
+	static void publishFailCallback(void *context, MQTTAsync_failureData *response) {
+		((IqrfMqtt *)context)->onPublishFail(response);
 	}
-		
-	void IqrfMqtt::onDelivered(void *context, MQTTAsync_token dt) {
+
+	void IqrfMqtt::onPublishFail(MQTTAsync_failureData *response) {
+		int code = -1;
+		std::string message("No message");
+
+		if (response) {
+			code = response->code;
+			message = response->message;
+		}
+		TRC_WARNING("Failed to publish message : [" << code << "] " <<
+		MQTTAsync_strerror(code) << ": " << message);
+	}
+
+	static void deliveredCallback(void *context, MQTTAsync_token dt) {
+		((IqrfMqtt *)context)->onDelivered(dt);
+	}
+
+	void IqrfMqtt::onDelivered(MQTTAsync_token dt) {
 		TRC_INFORMATION("Message delivery confirmed" << PAR(dt));
 	}
 
-	int IqrfMqtt::onMessage(void* context, char* topicName, int topicLen, MQTTAsync_message* message) {
+	static int messageCallback(void* context, char* topicName, int topicLen, MQTTAsync_message* message) {
+		return ((IqrfMqtt *)context)->onMessage(topicName, topicLen, message);
+	}
+
+	int IqrfMqtt::onMessage(char* topicName, int topicLen, MQTTAsync_message* message) {
+		(void)topicLen;
 		std::basic_string<uint8_t> payload((uint8_t *)message->payload, message->payloadlen);
 		m_accessControl.messageHandler(payload);
 		MQTTAsync_freeMessage(&message);
@@ -307,12 +315,97 @@ namespace iqrf {
 		return 1;
 	}
 
-	void IqrfMqtt::onConnectionLost(void *context, char *cause) {
+	static void connectionLostCallback(void *context, char *cause) {
+		((IqrfMqtt *)context)->onConnectionLost(cause);
+	}
+
+	void IqrfMqtt::onConnectionLost(char *cause) {
 		std::string errorMsg("unknown");
 		if (cause) {
 			errorMsg = std::string(cause);
 		}
 		TRC_WARNING("Connection lost: " <<  errorMsg);
 		startListen();
+	}
+
+	///// MQTT client methods /////
+
+	void IqrfMqtt::initMqtt() {
+		TRC_INFORMATION("Initializing MQTT client configuration");
+		int ret;
+
+		ret = MQTTAsync_create(&m_client, m_broker.c_str(), m_clientId.c_str(), MQTTCLIENT_PERSISTENCE_NONE, NULL);
+		if (ret != MQTTASYNC_SUCCESS) {
+			THROW_EXC_TRC_WAR(std::logic_error, "Failed to create MQTT client: " << PAR(ret));
+		}
+
+		m_connectOptions.keepAliveInterval = 25;
+		m_connectOptions.cleansession = 1;
+		m_connectOptions.connectTimeout = 5;
+		m_connectOptions.automaticReconnect = 1;
+		m_connectOptions.onSuccess = connectCallback;
+		m_connectOptions.onFailure = connectFailCallback;
+		m_connectOptions.context = this;
+
+		m_subscribeOptions.onSuccess = subscribeCallback;
+		m_subscribeOptions.onFailure = subscribeFailCallback;
+		m_subscribeOptions.context = this;
+
+		m_publishOptions.onSuccess = publishCallback;
+		m_publishOptions.onFailure = publishFailCallback;
+		m_publishOptions.context = this;
+
+		ret = MQTTAsync_setCallbacks(m_client, this, connectionLostCallback, messageCallback, deliveredCallback);
+		if (ret != MQTTASYNC_SUCCESS) {
+			THROW_EXC_TRC_WAR(std::logic_error, "Failed to set client callbacks: " << PAR(ret));
+		}
+	}
+
+	void IqrfMqtt::teardownMqtt() {
+		TRC_INFORMATION("Tearing down MQTT client");
+
+		m_reconnect = false;
+		onConnectFail(nullptr);
+		if (m_runThread.joinable()) {
+			m_runThread.join();
+		}
+
+		m_disconnectOptions.onSuccess = disconnectCallback;
+		m_disconnectOptions.onFailure = disconnectFailCallback;
+		m_disconnectOptions.context = this;
+
+		int ret = MQTTAsync_disconnect(m_client, &m_disconnectOptions);
+		if (ret != MQTTASYNC_SUCCESS) {
+			TRC_WARNING("Disconnect method failed: [" << ret << "]");
+			m_disconnect_promise.set_value(true);
+		}
+
+		std::chrono::seconds timeout(5);
+		if (m_disconnect_future.wait_for(timeout) == std::future_status::timeout) {
+			TRC_WARNING("Disconnect future timed out.");
+		}
+
+		MQTTAsync_setCallbacks(m_client, nullptr, nullptr, nullptr, nullptr);
+		MQTTAsync_destroy(&m_client);
+
+		TRC_INFORMATION("MQTT client terminated");
+	}
+
+	void IqrfMqtt::runListeningThread() {
+		int ret;
+		while (true) {
+			ret = MQTTAsync_connect(m_client, &m_connectOptions);
+			if (ret != MQTTASYNC_SUCCESS) {
+				TRC_WARNING("Connect method failed: " << PAR(ret));
+			}
+			TRC_DEBUG("Sleeping...");
+			{
+				std::unique_lock<std::mutex> lck(m_connectMutex);
+				if (m_cv.wait_for(lck, std::chrono::seconds(5), 
+				[this] {return m_connected == true || m_reconnect == false;})) {
+					break;
+				}
+			}
+		}
 	}
 }
